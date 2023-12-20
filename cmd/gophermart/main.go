@@ -16,11 +16,12 @@ import (
 )
 
 // TODO`s
-// - Implement storage layer
+// + Implement storage layer
 // - Write unit tests
 // - Implement error handling
 // - Implement logger
 // - Implement auth middleware
+// - Impement Luhn algorithm
 
 func main() {
 

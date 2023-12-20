@@ -22,17 +22,16 @@ type Repository interface {
 	TopUpBalance(ctx context.Context, orderNumber string, amountToAdd int) error
 	GetWithdrawalsInfo(ctx context.Context, userName string) ([]models.Withdrawal, error)
 	Withdraw(ctx context.Context, user string, withdrawal models.Withdrawal) error
-	AddWithdrawal(ctx context.Context, user string, withdrawal models.Withdrawal) error
+	// AddWithdrawal(ctx context.Context, user string, withdrawal models.Withdrawal) error
 	// GetOrdersInfo(ctx context.Context, orderNumber string) error
 	AddOrder(ctx context.Context, user, orderNumber string) error
-	ChangeOrderStatus(ctx context.Context, orderNumber, newStatus string) error
+	UpdateOrder(ctx context.Context, order models.Order) error
 	GetNotProcessedOrders(ctx context.Context, user string) ([]models.Order, error)
 }
 
 type app struct {
-	client         *resty.Client
-	storage        Repository
-	accrualAddress string
+	client  *resty.Client
+	storage Repository
 }
 
 func NewApp(s Repository, accrualAddr string) *app {
@@ -41,10 +40,7 @@ func NewApp(s Repository, accrualAddr string) *app {
 		SetRetryCount(3).
 		SetRetryMaxWaitTime(60 * time.Second).
 		AddRetryCondition(func(c *resty.Response, err error) bool {
-			if c.StatusCode() == 429 {
-				return true
-			}
-			return false
+			return c.StatusCode() == 429
 		}).
 		SetRetryAfter(func(c *resty.Client, r *resty.Response) (time.Duration, error) {
 			var dur time.Duration
@@ -79,7 +75,12 @@ func (a *app) CheckOrderAccrual(ctx context.Context, orderNumber []byte) (models
 		// TODO
 	}
 
-	err = a.storage.ChangeOrderStatus(ctx, string(orderNumber), order.Status)
+	if order.Status == "REGISTERED" {
+		order.Status = "NEW"
+		return order, nil
+	}
+
+	err = a.storage.UpdateOrder(ctx, order)
 	if err != nil {
 		// TODO
 	}
@@ -156,6 +157,19 @@ func (a *app) Login(ctx context.Context, body io.ReadCloser) (string, time.Time,
 
 }
 func (a *app) GetOrdersInfo(ctx context.Context, userName string) ([]byte, error) {
+
+	notProcessedOrdersrders, err := a.storage.GetNotProcessedOrders(ctx, userName)
+
+	var wg sync.WaitGroup
+	for _, order := range notProcessedOrdersrders {
+		wg.Add(1)
+		go func(orderNumber []byte) {
+			a.CheckOrderAccrual(ctx, orderNumber)
+			wg.Done()
+		}([]byte(order.Number))
+	}
+
+	wg.Wait()
 
 	orders, err := a.storage.GetUserOrders(ctx, userName)
 	if err != nil {
@@ -239,9 +253,9 @@ func (a *app) Withdraw(ctx context.Context, user string, body io.ReadCloser) err
 		// TODO
 	}
 
-	withdrawRequest.ProcessedAt = time.Now()
+	// withdrawRequest.ProcessedAt = time.Now()
 
-	err = a.storage.AddWithdrawal(ctx, user, withdrawRequest)
+	// err = a.storage.AddWithdrawal(ctx, user, withdrawRequest)
 
 	return nil
 

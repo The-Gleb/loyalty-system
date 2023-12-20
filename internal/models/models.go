@@ -18,6 +18,7 @@ func (s *Session) isExpired() bool {
 }
 
 type Order struct {
+	User       string    `json:"user,omitempty"`
 	Number     string    `json:"number"`
 	Status     string    `json:"status"`
 	Accrual    int       `json:"accrual,omitempty"`
