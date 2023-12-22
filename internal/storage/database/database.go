@@ -53,10 +53,8 @@ func (db *DB) CreateUser(ctx context.Context, user models.Credentials) error {
 	if err == nil {
 		return errors.NewDomainError(errors.LoginAlredyExists, "[CreateUser]: login exists")
 	}
-	if err != nil {
-		if err.Error() != sql.ErrNoRows.Error() {
-			return err
-		}
+	if err.Error() != sql.ErrNoRows.Error() {
+		return err
 	}
 
 	_, err = db.db.ExecContext(ctx, `
@@ -241,7 +239,7 @@ func (db *DB) AddOrder(ctx context.Context, user, orderNumber string) (models.Or
 		}
 		return order, errors.NewDomainError(errors.OrderAlreadyAddedByAnotherUser, "[AddOrder]:")
 	}
-	if err != nil && err.Error() != sql.ErrNoRows.Error() {
+	if err != sql.ErrNoRows {
 		return order, err
 	}
 
@@ -283,7 +281,9 @@ func (db *DB) GetNotProcessedOrders(ctx context.Context, user string) ([]models.
 				&& order_status IN ('NEW', 'PROCESSING');
 			`, user)
 	// TODO: handle timestamp
-
+	if err := rows.Err(); err != nil {
+		return orders, err
+	}
 	if err != nil {
 		return orders, err
 	}
