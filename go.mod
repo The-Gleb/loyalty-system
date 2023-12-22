@@ -7,6 +7,7 @@ require (
 	github.com/go-chi/chi v1.5.5
 	github.com/go-resty/resty/v2 v2.10.0
 	github.com/google/uuid v1.5.0
+	github.com/jackc/pgerrcode v0.0.0-20220416144525-469b46aa5efa
 	github.com/jackc/pgx/v5 v5.5.1
 	golang.org/x/crypto v0.16.0
 )

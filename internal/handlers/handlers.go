@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/The-Gleb/loyalty-system/internal/errors"
 )
 
 type App interface {
@@ -36,7 +38,18 @@ func (h *handlers) RegisterHandler(rw http.ResponseWriter, r *http.Request) {
 	sessionToken, expires, err := h.app.Register(r.Context(), r.Body)
 
 	if err != nil {
-		// TODO:
+		switch errors.Code(err) {
+		case errors.LoginAlredyExists:
+			http.Error(rw, err.Error(), http.StatusConflict)
+			return
+		case errors.ErrUnmarshallingJSON:
+			http.Error(rw, err.Error(), http.StatusBadRequest)
+			return
+		default:
+			http.Error(rw, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
 	}
 
 	c := http.Cookie{
@@ -53,7 +66,17 @@ func (h *handlers) LoginHandler(rw http.ResponseWriter, r *http.Request) {
 	sessionToken, expires, err := h.app.Login(r.Context(), r.Body)
 
 	if err != nil {
-		// TODO:
+		switch errors.Code(err) {
+		case errors.WrongLoginOrPassword:
+			http.Error(rw, err.Error(), http.StatusUnauthorized)
+			return
+		case errors.ErrUnmarshallingJSON:
+			http.Error(rw, err.Error(), http.StatusBadRequest)
+			return
+		default:
+			http.Error(rw, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	c := http.Cookie{
@@ -74,7 +97,14 @@ func (h *handlers) GetOrdersInfoHandler(rw http.ResponseWriter, r *http.Request)
 	body, err := h.app.GetOrdersInfo(r.Context(), user)
 
 	if err != nil {
-		// TODO:
+		switch errors.Code(err) {
+		case errors.NoDataFound:
+			rw.WriteHeader(204)
+			return
+		default:
+			http.Error(rw, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	rw.Write(body)
@@ -90,10 +120,26 @@ func (h *handlers) LoadOrderHandler(rw http.ResponseWriter, r *http.Request) {
 	err := h.app.LoadOrder(r.Context(), user, r.Body)
 
 	if err != nil {
-		// TODO:
+		switch errors.Code(err) {
+		case errors.OrderAlreadyAddedByThisUser:
+			rw.WriteHeader(http.StatusOK)
+			return
+		case errors.ErrUnmarshallingJSON:
+			http.Error(rw, err.Error(), http.StatusBadRequest)
+			return
+		case errors.OrderAlreadyAddedByAnotherUser:
+			http.Error(rw, err.Error(), http.StatusConflict)
+			return
+		case errors.InvalidOrderNumber:
+			http.Error(rw, err.Error(), http.StatusUnprocessableEntity)
+			return
+		default:
+			http.Error(rw, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
-	rw.WriteHeader(http.StatusOK)
+	rw.WriteHeader(202)
 
 }
 func (h *handlers) GetBalanceHandler(rw http.ResponseWriter, r *http.Request) {
@@ -106,7 +152,7 @@ func (h *handlers) GetBalanceHandler(rw http.ResponseWriter, r *http.Request) {
 	body, err := h.app.GetBalance(r.Context(), user)
 
 	if err != nil {
-		// TODO:
+		http.Error(rw, err.Error(), http.StatusBadRequest)
 	}
 
 	rw.Write(body)
@@ -121,7 +167,17 @@ func (h *handlers) WithdrawHandler(rw http.ResponseWriter, r *http.Request) {
 
 	err := h.app.Withdraw(r.Context(), user, r.Body)
 	if err != nil {
-		// TODO:
+		switch errors.Code(err) {
+		case errors.InsufficientFunds:
+			http.Error(rw, err.Error(), http.StatusPaymentRequired)
+			return
+		case errors.InvalidOrderNumber:
+			http.Error(rw, err.Error(), http.StatusUnprocessableEntity)
+			return
+		default:
+			http.Error(rw, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
 }
@@ -134,7 +190,13 @@ func (h *handlers) GetWithdrawalsInfoHandler(rw http.ResponseWriter, r *http.Req
 
 	respBody, err := h.app.GetWithdrawalsInfo(r.Context(), user)
 	if err != nil {
-		// TODO:
+		switch errors.Code(err) {
+		case errors.NoDataFound:
+			rw.WriteHeader(204)
+		default:
+			http.Error(rw, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	rw.Write(respBody)

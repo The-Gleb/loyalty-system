@@ -3,10 +3,12 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"sync"
 	"time"
 
+	"github.com/The-Gleb/loyalty-system/internal/errors"
 	"github.com/The-Gleb/loyalty-system/internal/models"
 	"github.com/go-resty/resty/v2"
 	"github.com/google/uuid"
@@ -24,7 +26,7 @@ type Repository interface {
 	Withdraw(ctx context.Context, user string, withdrawal models.Withdrawal) error
 	// AddWithdrawal(ctx context.Context, user string, withdrawal models.Withdrawal) error
 	// GetOrdersInfo(ctx context.Context, orderNumber string) error
-	AddOrder(ctx context.Context, user, orderNumber string) error
+	AddOrder(ctx context.Context, user, orderNumber string) (models.Order, error)
 	UpdateOrder(ctx context.Context, order models.Order) error
 	GetNotProcessedOrders(ctx context.Context, user string) ([]models.Order, error)
 }
@@ -102,14 +104,20 @@ func isValid(orderNumber []byte) bool {
 func (a *app) Register(ctx context.Context, body io.ReadCloser) (string, time.Time, error) {
 	var newUser models.Credentials
 
-	json.NewDecoder(body).Decode(&newUser)
+	err := json.NewDecoder(body).Decode(&newUser)
+	if err != nil {
+		return "", time.Now(), errors.WrapIntoDomainError(err, errors.ErrUnmarshallingJSON, "[Register]:")
+	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newUser.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return "", time.Now(), fmt.Errorf("[Register]: %w", err)
+	}
 	newUser.Password = string(hashedPassword)
 
 	err = a.storage.CreateUser(ctx, newUser)
 	if err != nil {
-		// TODO
+		return "", time.Now(), fmt.Errorf("[Register]: %w", err)
 	}
 
 	newSession := models.Session{
@@ -118,9 +126,16 @@ func (a *app) Register(ctx context.Context, body io.ReadCloser) (string, time.Ti
 		Expiry:   time.Now().Add(24 * time.Hour),
 	}
 
-	err = a.storage.CreateSession(ctx, newSession)
-	if err != nil {
-		// TODO
+	for {
+		err = a.storage.CreateSession(ctx, newSession)
+		if errors.Code(err) == errors.NotUniqueToken {
+			newSession.Token = uuid.NewString()
+			continue
+		}
+		if err != nil {
+			return "", time.Now(), fmt.Errorf("[Register]: %w", err)
+		}
+		break
 	}
 
 	return newSession.Token, newSession.Expiry, nil
@@ -130,16 +145,19 @@ func (a *app) Login(ctx context.Context, body io.ReadCloser) (string, time.Time,
 
 	var user models.Credentials
 
-	json.NewDecoder(body).Decode(&user)
+	err := json.NewDecoder(body).Decode(&user)
+	if err != nil {
+		return "", time.Now(), errors.WrapIntoDomainError(err, errors.ErrUnmarshallingJSON, "[Register]:")
+	}
 
 	expectedPassword, err := a.storage.GetUserPassword(ctx, user.Login)
 	if err != nil {
-		// TODO
+		return "", time.Now(), fmt.Errorf("[Login]: %w", err)
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(expectedPassword), []byte(user.Password))
 	if err != nil {
-		// TODO
+		return "", time.Now(), errors.WrapIntoDomainError(err, errors.WrongLoginOrPassword, "[Login]:")
 	}
 
 	newSession := models.Session{
@@ -148,9 +166,16 @@ func (a *app) Login(ctx context.Context, body io.ReadCloser) (string, time.Time,
 		Expiry:   time.Now().Add(24 * time.Hour),
 	}
 
-	err = a.storage.CreateSession(ctx, newSession)
-	if err != nil {
-		// TODO
+	for {
+		err = a.storage.CreateSession(ctx, newSession)
+		if errors.Code(err) == errors.NotUniqueToken {
+			newSession.Token = uuid.NewString()
+			continue
+		}
+		if err != nil {
+			return "", time.Now(), fmt.Errorf("[Register]: %w", err)
+		}
+		break
 	}
 
 	return newSession.Token, newSession.Expiry, nil
@@ -188,16 +213,16 @@ func (a *app) LoadOrder(ctx context.Context, user string, orderNumber io.ReadClo
 
 	orderNum, err := io.ReadAll(orderNumber)
 	if err != nil {
-		// TODO
+		return err
 	}
 
 	if !isValid(orderNum) {
-		// TODO
+		return errors.NewDomainError(errors.InvalidOrderNumber, "[LoadOrder]: order number is invalid")
 	}
 
-	err = a.storage.AddOrder(ctx, user, string(orderNum))
+	_, err = a.storage.AddOrder(ctx, user, string(orderNum))
 	if err != nil {
-		// TODO, already exist 200/ another user`s order
+		return err
 	}
 
 	go a.CheckOrderAccrual(ctx, orderNum)
@@ -222,12 +247,12 @@ func (a *app) GetBalance(ctx context.Context, user string) ([]byte, error) {
 
 	balance, err := a.storage.GetBalance(ctx, user)
 	if err != nil {
-		// TODO
+		return make([]byte, 0), err
 	}
 
 	jsonBalance, err := json.Marshal(balance)
 	if err != nil {
-		// TODO
+		return make([]byte, 0), err
 	}
 
 	return jsonBalance, nil
@@ -241,16 +266,16 @@ func (a *app) Withdraw(ctx context.Context, user string, body io.ReadCloser) err
 
 	balance, err := a.storage.GetBalance(ctx, user)
 	if err != nil {
-		// TODO
+		return err
 	}
 
 	if withdrawRequest.Sum > balance.Current {
-		// TODO
+		return errors.NewDomainError(errors.InsufficientFunds, "[Withdraw]: insufficient funds")
 	}
 
 	err = a.storage.Withdraw(ctx, user, withdrawRequest)
 	if err != nil {
-		// TODO
+		return err
 	}
 
 	// withdrawRequest.ProcessedAt = time.Now()
@@ -264,12 +289,12 @@ func (a *app) GetWithdrawalsInfo(ctx context.Context, user string) ([]byte, erro
 
 	withdrawalsInfo, err := a.storage.GetWithdrawalsInfo(ctx, user)
 	if err != nil {
-		// TODO
+		return make([]byte, 0), err
 	}
 
 	withdrawalsInfoJSON, err := json.Marshal(withdrawalsInfo)
 	if err != nil {
-		// TODO
+		return make([]byte, 0), err
 	}
 
 	return withdrawalsInfoJSON, nil
