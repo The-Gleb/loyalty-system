@@ -68,13 +68,13 @@ func (a *app) CheckOrderAccrual(ctx context.Context, orderNumber []byte) (models
 	resp, err := a.client.R().
 		Post("/orders/" + string(orderNumber))
 	if err != nil {
-		// TODO
+		return models.Order{}, err
 	}
 
 	var order models.Order
 	err = json.Unmarshal(resp.Body(), &order)
 	if err != nil {
-		// TODO
+		return models.Order{}, err
 	}
 
 	if order.Status == "REGISTERED" {
@@ -84,12 +84,12 @@ func (a *app) CheckOrderAccrual(ctx context.Context, orderNumber []byte) (models
 
 	err = a.storage.UpdateOrder(ctx, order)
 	if err != nil {
-		// TODO
+		return models.Order{}, err
 	}
 
 	err = a.storage.TopUpBalance(ctx, string(orderNumber), order.Accrual)
 	if err != nil {
-		// TODO
+		return models.Order{}, err
 	}
 
 	return order, nil
@@ -184,6 +184,9 @@ func (a *app) Login(ctx context.Context, body io.ReadCloser) (string, time.Time,
 func (a *app) GetOrdersInfo(ctx context.Context, userName string) ([]byte, error) {
 
 	notProcessedOrdersrders, err := a.storage.GetNotProcessedOrders(ctx, userName)
+	if err != nil {
+		return make([]byte, 0), err
+	}
 
 	var wg sync.WaitGroup
 	for _, order := range notProcessedOrdersrders {
@@ -198,12 +201,12 @@ func (a *app) GetOrdersInfo(ctx context.Context, userName string) ([]byte, error
 
 	orders, err := a.storage.GetUserOrders(ctx, userName)
 	if err != nil {
-		// TODO
+		return make([]byte, 0), err
 	}
 
 	ordersJSON, err := json.Marshal(orders)
 	if err != nil {
-		// TODO
+		return make([]byte, 0), err
 	}
 
 	return ordersJSON, nil
@@ -233,6 +236,9 @@ func (a *app) LoadOrder(ctx context.Context, user string, orderNumber io.ReadClo
 func (a *app) GetBalance(ctx context.Context, user string) ([]byte, error) {
 
 	orders, err := a.storage.GetNotProcessedOrders(ctx, user)
+	if err != nil {
+		return make([]byte, 0), err
+	}
 
 	var wg sync.WaitGroup
 	for _, order := range orders {

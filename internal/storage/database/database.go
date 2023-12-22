@@ -25,7 +25,7 @@ func ConnectDB(dsn string) (*DB, error) {
 
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
-		// return nil, checkForConectionErr("ConnectDB", err)
+		return nil, err
 	}
 
 	schemaQuery = strings.TrimSpace(schemaQuery)
@@ -53,8 +53,10 @@ func (db *DB) CreateUser(ctx context.Context, user models.Credentials) error {
 	if err == nil {
 		return errors.NewDomainError(errors.LoginAlredyExists, "[CreateUser]: login exists")
 	}
-	if err != nil && err != sql.ErrNoRows {
-		return err
+	if err != nil {
+		if err.Error() != sql.ErrNoRows.Error() {
+			return err
+		}
 	}
 
 	_, err = db.db.ExecContext(ctx, `
@@ -91,13 +93,14 @@ func (db *DB) GetUserOrders(ctx context.Context, userName string) ([]models.Orde
 				WHERE order_user = $1;
 			`, userName)
 	// TODO: handle timestamp
-	defer rows.Close()
+
 	if err != nil {
 		// if err == sql.ErrNoRows {
 		// 	return make([]models.Order, 0), errors.WrapIntoDomainError(err, errors.NoDataFound, "[GetUserOrders]:")
 		// }
 		return make([]models.Order, 0), err
 	}
+	defer rows.Close()
 
 	orders := make([]models.Order, 0)
 	for rows.Next() {
@@ -163,10 +166,11 @@ func (db *DB) GetWithdrawalsInfo(ctx context.Context, userName string) ([]models
 		FROM withdrawals
 		WHERE user = $1
 	`, userName)
-	defer rows.Close()
+
 	if err != nil {
 		return make([]models.Withdrawal, 0), err
 	}
+	defer rows.Close()
 
 	for rows.Next() {
 		var withdrawal models.Withdrawal
@@ -237,7 +241,7 @@ func (db *DB) AddOrder(ctx context.Context, user, orderNumber string) (models.Or
 		}
 		return order, errors.NewDomainError(errors.OrderAlreadyAddedByAnotherUser, "[AddOrder]:")
 	}
-	if err != nil && err != sql.ErrNoRows {
+	if err != nil && err.Error() != sql.ErrNoRows.Error() {
 		return order, err
 	}
 
@@ -279,10 +283,11 @@ func (db *DB) GetNotProcessedOrders(ctx context.Context, user string) ([]models.
 				&& order_status IN ('NEW', 'PROCESSING');
 			`, user)
 	// TODO: handle timestamp
-	defer rows.Close()
+
 	if err != nil {
 		return orders, err
 	}
+	defer rows.Close()
 
 	for rows.Next() {
 		var order models.Order

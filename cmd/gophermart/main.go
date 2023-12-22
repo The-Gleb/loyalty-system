@@ -18,11 +18,12 @@ import (
 // TODO`s
 // + Implement storage layer
 // + Implement error handling
+// - Handle CheckOrderAccrual errors
 // - Implement logger
 // - Write unit tests
 // - Implement auth middleware
 // - Implement Luhn algorithm
-// - Handle db timestamp
+// - Handle db timestamps
 
 func main() {
 
